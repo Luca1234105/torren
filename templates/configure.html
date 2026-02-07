@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configura Torrentio ITA 🇮🇹</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #e0e0e0; display: flex; justify-content: center; padding: 20px; }
+        .container { background-color: #1e1e1e; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); max-width: 500px; width: 100%; }
+        h1 { text-align: center; color: #00cec9; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input, select { width: 100%; padding: 12px; background-color: #2d3436; border: 1px solid #636e72; border-radius: 6px; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; background-color: #00b894; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.3s; margin-top: 10px; }
+        button:hover { background-color: #00a884; }
+        .note { font-size: 0.85em; color: #b2bec3; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Torrentio SOLO ITA 🇮🇹</h1>
+        
+        <div class="form-group">
+            <label>1. Servizio Debrid (Opzionale)</label>
+            <select id="service">
+                <option value="">Nessuno (Solo Torrent P2P)</option>
+                <option value="realdebrid">Real Debrid</option>
+                <option value="torbox">TorBox</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>2. API Key Debrid</label>
+            <input type="text" id="apikey" placeholder="Inserisci la tua API Key">
+        </div>
+
+        <div class="form-group">
+            <label>3. Opzioni Extra Torrentio</label>
+            <input type="text" id="options" placeholder="es. providers=yts|quality=720p">
+            <div class="note">Lascia vuoto per usare le impostazioni standard.</div>
+        </div>
+
+        <button onclick="install()">INSTALLA SU STREMIO</button>
+    </div>
+
+    <script>
+        function install() {
+            const service = document.getElementById('service').value;
+            const key = document.getElementById('apikey').value;
+            const options = document.getElementById('options').value;
+
+            const config = {
+                service: service,
+                key: key,
+                options: options
+            };
+
+            // Codifica JSON in Base64
+            const jsonStr = JSON.stringify(config);
+            const b64 = btoa(jsonStr).replace(/=/g, ''); 
+
+            // Costruisci URL Stremio
+            const host = window.location.host;
+            const protocol = window.location.protocol;
+            // Stremio richiede stremio:// se non sei su HTTPS sicuro, ma proviamo redirect diretto
+            const manifestUrl = `${host}/${b64}/manifest.json`;
+            
+            window.location.href = `stremio://${manifestUrl}`;
+        }
+    </script>
+</body>
+</html>
