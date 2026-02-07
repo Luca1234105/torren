@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  torrentio-ita:
+    container_name: torrentio_ita_addon
+    build: .
+    ports:
+      - "7002:7002"
+    environment:
+      - PORT=7002
+      # - LOG_LEVEL=info
+    restart: unless-stopped
+    volumes:
+      # (Opzionale) Monta la cartella corrente per sviluppo live
+      # Se modifichi il codice, basta riavviare il container
+      - ./:/app
