@@ -3,14 +3,17 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import httpx
+import asyncio
 import os
 import re
+from urllib.parse import unquote
 
-# Import dei moduli interni
+# Import moduli interni
 from utils.encoding import decode_config
 from core.torrentio import fetch_torrentio_streams
 from core.filter import is_italian_content
-from core.debrid import check_realdebrid_cache, check_torbox_cache
+from core import rd
 
 app = FastAPI()
 
@@ -24,6 +27,76 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory="templates")
 
+# --- HELPER FUNCTIONS ---
+
+def get_hash_from_stream(stream: dict) -> str:
+    """Estrae l'hash da infoHash o URL"""
+    if stream.get('infoHash'):
+        return stream['infoHash'].lower()
+    
+    url = stream.get('url')
+    if url:
+        match = re.search(r'btih:([a-fA-F0-9]{40})', url, re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+        parts = url.split('/')
+        if len(parts) > 6:
+            potential_hash = parts[6]
+            if re.match(r'^[a-fA-F0-9]{40}$', potential_hash):
+                return potential_hash.lower()
+    return ""
+
+# --- REAL ACTIVE CHECKER ---
+
+async def check_cache_active(stream: dict, api_key: str) -> bool:
+    """
+    Controllo Cache 'Pesante':
+    1. Aggiunge Magnet a RD
+    2. Seleziona i file
+    3. Controlla se è 'downloaded' (Cached)
+    4. Cancella il torrent
+    """
+    hash_val = get_hash_from_stream(stream)
+    if not hash_val: 
+        return False
+
+    is_cached = False
+    torrent_id = None
+
+    try:
+        async with httpx.AsyncClient(timeout=10, headers={'Authorization': f"Bearer {api_key}"}) as client:
+            # 1. Aggiungi Magnet
+            magnet_response = await rd.add_magnet(client, hash_val)
+            if 'id' not in magnet_response:
+                return False
+            
+            torrent_id = magnet_response['id']
+            
+            # 2. Seleziona tutti i file ("all") per vedere se è pronto
+            await rd.select_files(client, torrent_id, "all")
+            
+            # 3. Controlla Info
+            info = await rd.get_torrent_info(client, torrent_id)
+            
+            if info.get('status') == 'downloaded':
+                is_cached = True
+            
+            # 4. Pulizia Immediata (Non lasciamo tracce)
+            await rd.delete_torrent(client, torrent_id)
+
+    except Exception as e:
+        print(f"Errore Active Check per {hash_val}: {e}")
+        # Tenta pulizia di emergenza se abbiamo un ID
+        if torrent_id:
+             try:
+                 async with httpx.AsyncClient(timeout=5, headers={'Authorization': f"Bearer {api_key}"}) as client:
+                    await rd.delete_torrent(client, torrent_id)
+             except: pass
+
+    return is_cached
+
+# --- ENDPOINTS ---
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/configure", response_class=HTMLResponse)
 async def configure(request: Request):
@@ -31,16 +104,11 @@ async def configure(request: Request):
 
 @app.get("/{config}/manifest.json")
 async def get_manifest(config: str):
-    settings = decode_config(config)
-    service_tag = ""
-    if settings.get("service") == "realdebrid": service_tag = " [RD]"
-    if settings.get("service") == "torbox": service_tag = " [TB]"
-
     return {
-        "id": "org.ita.torrentiofilter",
-        "version": "1.0.2",
-        "name": f"Torrentio ITA{service_tag}",
-        "description": "Filtra solo contenuti ITA. ⚡ = In Cache, ⏳ = Download",
+        "id": "org.ita.torrentiofilter.heavy",
+        "version": "2.0.0",
+        "name": "Torrentio ITA [Heavy Check]",
+        "description": "Filtra ITA e forza il controllo cache su RD.",
         "resources": ["stream"],
         "types": ["movie", "series"],
         "catalogs": [],
@@ -49,14 +117,12 @@ async def get_manifest(config: str):
 
 @app.get("/{config}/stream/{type}/{id}.json")
 async def get_stream(config: str, type: str, id: str):
+    print(f"\n--- STREAM: {type} {id} ---")
     settings = decode_config(config)
-    
     service = settings.get("service")
     apikey = settings.get("key")
-    # Se l'utente non ha messo opzioni, usiamo un default sensato
-    options = settings.get("options", "") 
+    options = settings.get("options", "")
 
-    # 1. Recupera gli stream da Torrentio
     try:
         data = await fetch_torrentio_streams(type, id, options)
         streams = data.get("streams", [])
@@ -64,89 +130,34 @@ async def get_stream(config: str, type: str, id: str):
         print(f"Errore Torrentio: {e}")
         return {"streams": []}
 
-    # 2. Filtra ITA e Raccogli Hash
-    filtered_streams = []
-    hashes_to_check = []
-
-    for stream in streams:
-        title = stream.get("title", "")
-        name = stream.get("name", "")
-        
-        # Pulisci il nome (spesso Torrentio mette newline)
-        filename = title.split("\n")[0]
-
-        if is_italian_content(name, title):
-            # Cerchiamo l'hash. Torrentio lo mette in infoHash.
-            # Se non c'è, proviamo a estrarlo dall'URL magnet o http
-            info_hash = stream.get("infoHash")
-            
-            # Se Torrentio non espone infoHash direttamente, prova a cercarlo nell'URL (fallback)
-            if not info_hash and "btih:" in stream.get("url", ""):
-                 match = re.search(r'btih:([a-fA-F0-9]{40})', stream['url'])
-                 if match: info_hash = match.group(1)
-
-            if info_hash:
-                # Salviamo l'hash in una chiave temporanea per usarlo dopo
-                stream["_temp_hash"] = info_hash
-                hashes_to_check.append(info_hash)
-            
-            filtered_streams.append(stream)
-
-    if not filtered_streams:
-        return {"streams": []}
-
-    # 3. Controllo Cache (Batch - Una sola chiamata per tutti)
-    cached_hashes = set()
-    
-    if service == "realdebrid" and apikey and hashes_to_check:
-        cached_hashes = await check_realdebrid_cache(hashes_to_check, apikey)
-    elif service == "torbox" and apikey and hashes_to_check:
-        cached_hashes = await check_torbox_cache(hashes_to_check, apikey)
-
-    # 4. Formatta Output Finale
     final_streams = []
-    for stream in filtered_streams:
-        # Recupera l'hash temporaneo
-        h = stream.get("_temp_hash", "").lower()
+    
+    # Filtra solo ITA
+    ita_streams = [s for s in streams if is_italian_content(s.get('name', ''), s.get('title', ''))]
+    print(f"DEBUG: Trovati {len(ita_streams)} ITA su {len(streams)} totali.")
+
+    # Limitiamo il numero di controlli per non bloccare tutto (Max 15 file)
+    ita_streams = ita_streams[:15]
+
+    # Processiamo i file sequenzialmente (o in piccoli gruppi) per non esplodere RD
+    for stream in ita_streams:
+        base_name = stream['name'].replace('Torrentio', '').strip()
         
-        # Pulisci il nome stream per rimuovere [RD download] vecchi di Torrentio
-        clean_name = stream["name"].replace("[RD download]", "").replace("[RD+]", "").replace("Torrentio", "").strip()
-        if not clean_name: clean_name = "ITA" # Fallback
-
-        # Formatta Titolo e Descrizione
-        title_lines = stream.get("title", "").split("\n")
-        file_display = title_lines[0] # Il nome del file
-        # Cerca la dimensione se presente nel titolo originale
-        size_display = ""
-        for line in title_lines:
-            if "GB" in line or "MB" in line:
-                size_display = line
-
-        new_description = f"{file_display}\n{size_display}"
-
-        if h in cached_hashes:
-            # È IN CACHE: Icona Fulmine
-            stream["name"] = f"[⚡RD+] 🇮🇹 {clean_name}"
-            stream["title"] = new_description
-            # Behavior hints per dire a Stremio che è pronto
-            stream["behaviorHints"] = {
-                "bingeGroup": f"ita-cached-{h}",
-                "notWebReady": False
-            }
-        elif service:
-            # NON È IN CACHE MA ABBIAMO DEBRID: Icona Clessidra
-            stream["name"] = f"[⏳DL] 🇮🇹 {clean_name}"
-            stream["title"] = new_description
+        # Se RealDebrid è configurato
+        if service == 'realdebrid' and apikey:
+            # Esegui il controllo pesante
+            is_ready = await check_cache_active(stream, apikey)
+            
+            if is_ready:
+                stream['name'] = f"[⚡RD+] 🇮🇹 {base_name}"
+            else:
+                stream['name'] = f"[⏳DL] 🇮🇹 {base_name}"
         else:
-             # NESSUN DEBRID (Solo P2P)
-             stream["name"] = f"🇮🇹 {clean_name}"
+            stream['name'] = f"[P2P] 🇮🇹 {base_name}"
 
-        # Rimuovi chiave temporanea prima di inviare a Stremio
-        if "_temp_hash" in stream: del stream["_temp_hash"]
-        
         final_streams.append(stream)
 
-    # Ordina: Prima i Cached (RD+), poi gli altri
+    # Ordina: Prima i Cached
     final_streams.sort(key=lambda x: "[⚡RD+]" not in x["name"])
 
     return {"streams": final_streams}
