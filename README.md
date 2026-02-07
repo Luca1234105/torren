@@ -1,6 +1,8 @@
 <div align="center">
 
-  <img src="https://i.ibb.co/wfF4j52/Gemini-Generated-Image-mm5p80mm5p80mm5p-Photoroom.png" alt="Torrenthan Logo" width="250" height="250" />
+  <a href="#">
+    <img src="https://i.ibb.co/wfF4j52/Gemini-Generated-Image-mm5p80mm5p80mm5p-Photoroom.png" alt="Torrenthan Logo" width="300" />
+  </a>
 
   # Torrenthan 🇮🇹
   
