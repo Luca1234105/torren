@@ -116,28 +116,54 @@ Impostare filtri di qualità opzionali.
 
 Generare il link di installazione per Stremio ("Install").
 
-⚖️ Legal & Disclaimer (IMPORTANTE)
-Leggere attentamente prima dell'uso.
+---
 
-1. Natura del Software Torrenthan è un motore di meta-ricerca e indicizzazione. Questo software:
+---
 
-NON ospita, archivia o distribuisce alcun file video, audio o contenuto protetto da copyright.
+<div align="center">
 
-NON possiede un database proprio di contenuti.
+[![Legal](https://img.shields.io/badge/LEGAL-DISCLAIMER-red?style=for-the-badge&logo=scale)](https://en.wikipedia.org/wiki/Disclaimer)
+[![Education](https://img.shields.io/badge/PURPOSE-EDUCATIONAL-blue?style=for-the-badge&logo=book)](https://opensource.org/)
 
-Agisce esclusivamente come interfaccia tecnica tra l'utente, plugin di terze parti (come Torrentio) e servizi di API pubbliche (come Real-Debrid o TorBox).
+# ⚖️ LEGAL & DISCLAIMER
+### ⚠️ IMPORTANTE: LEGGERE ATTENTAMENTE PRIMA DELL'USO
 
-2. Responsabilità dell'Utente L'utilizzo di questo software è a totale discrezione e rischio dell'utente finale.
+</div>
 
-È responsabilità dell'utente assicurarsi di possedere i diritti necessari per visualizzare o scaricare i contenuti accessibili tramite i servizi configurati.
+### 1. 🧬 Natura del Software
+**Torrenthan** è un motore di meta-ricerca e indicizzazione automatizzato. È fondamentale comprendere che questo software:
 
-Gli sviluppatori di Torrenthan non hanno alcun controllo sui risultati forniti dagli scraper di terze parti né sui file accessibili tramite i servizi Debrid.
+> * ❌ **NON** ospita, archivia o distribuisce alcun file video, audio o contenuto protetto da copyright.
+> * ❌ **NON** possiede un database proprio di contenuti.
+> * ✅ **AGISCE** esclusivamente come interfaccia tecnica ("Middleware") tra l'utente, plugin di terze parti (come Torrentio) e servizi di API pubbliche (come Real-Debrid o TorBox).
 
-3. Conformità DMCA / Copyright Poiché Torrenthan non ospita contenuti ma si limita a processare stringhe di testo (hash e magnet link) generate da terze parti, non è tecnicamente possibile rimuovere contenuti dal "software" in quanto il software non ne contiene. Per richieste di rimozione contenuti, rivolgersi direttamente ai siti di hosting sorgente o ai tracker pubblici indicizzati.
+---
 
-4. Scopo Educativo Questo progetto è stato sviluppato a puro scopo didattico per analizzare le performance delle librerie FastAPI e l'interazione con API REST complesse. L'autore condanna la pirateria informatica e incoraggia l'uso di servizi di streaming legali.
+### 2. 👤 Responsabilità dell'Utente
+L'utilizzo di questo software è a **totale discrezione e rischio dell'utente finale**.
 
-<div align="center"> <sub>Developed with logic & passion.</sub>
+* È **responsabilità esclusiva dell'utente** assicurarsi di possedere i diritti necessari per visualizzare o scaricare i contenuti accessibili tramite i servizi configurati.
+* Gli sviluppatori di Torrenthan **non hanno alcun controllo** sui risultati forniti dagli scraper di terze parti né sui file accessibili tramite i servizi Debrid.
 
+---
 
-<sub><i>Torrenthan Team © 2024</i></sub> </div>
+### 3. 🛡️ Conformità DMCA / Copyright
+Poiché Torrenthan **non ospita contenuti** ma si limita a processare stringhe di testo (hash e magnet link) generate da terze parti:
+* Non è tecnicamente possibile rimuovere contenuti dal "software" in quanto il software **non ne contiene**.
+* Per richieste di rimozione contenuti (DMCA Takedown), rivolgersi direttamente ai **siti di hosting sorgente** o ai **tracker pubblici** indicizzati.
+
+---
+
+### 4. 🎓 Scopo Educativo
+Questo progetto è stato sviluppato a **puro scopo didattico** e di ricerca per:
+1.  Analizzare le performance delle librerie `FastAPI` in Python.
+2.  Studiare l'interazione asincrona con API REST complesse e protocolli P2P.
+
+> 🚫 **L'autore condanna fermamente la pirateria informatica e incoraggia l'uso di servizi di streaming legali e autorizzati.**
+
+---
+
+<div align="center">
+  <sub>Developed with logic & passion.</sub><br>
+  <sub><i>Torrenthan Team © 2024</i></sub>
+</div>
