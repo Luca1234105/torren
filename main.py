@@ -24,31 +24,20 @@ app.add_middleware(
 templates = Jinja2Templates(directory="templates")
 
 # --- LEVIATHAN STYLE PARSER ---
-
 def extract_leviathan_data(title: str, name: str):
-    """
-    Analizza il titolo sporco di Torrentio per estrarre tag stile Leviathan.
-    """
     title_lower = title.lower()
     name_lower = name.lower()
     
-    # 1. Risoluzione e Sorgente
+    # 1. Risoluzione
     res = "UNK"
     if "2160p" in name_lower or "4k" in name_lower: res = "4K"
     elif "1080p" in name_lower: res = "1080p"
     elif "720p" in name_lower: res = "720p"
     elif "480p" in name_lower: res = "SD"
 
-    source = "WEB"
-    if "bluray" in title_lower: source = "BLURAY"
-    elif "remux" in title_lower: source = "REMUX"
-    elif "dvdrip" in title_lower: source = "DVD"
-    elif "hdtv" in title_lower: source = "HDTV"
-    elif "web-dl" in title_lower or "webrip" in title_lower: source = "WEB-DL"
-
     # 2. Codec e Video Features
     codec = "x264"
-    if "hevc" in title_lower or "h265" in title_lower or "x265" in title_lower: codec = "HEVC"
+    if "hevc" in title_lower or "h265" in title_lower: codec = "HEVC"
     elif "avc" in title_lower or "h264" in title_lower: codec = "AVC"
 
     hdr_tag = ""
@@ -61,9 +50,8 @@ def extract_leviathan_data(title: str, name: str):
     elif "ac3" in title_lower or "dd5.1" in title_lower: audio = "Dolby Digital"
     elif "truehd" in title_lower: audio = "TrueHD"
     elif "dts" in title_lower: audio = "DTS"
-    elif "aac" in title_lower: audio = "AAC"
 
-    # 4. Numeri (Size, Peers)
+    # 4. Numeri
     peers_match = re.search(r"👤\s*(\d+)", title)
     peers = peers_match.group(1) if peers_match else "0"
     
@@ -75,14 +63,9 @@ def extract_leviathan_data(title: str, name: str):
     uploader = uploader_match.group(1).strip() if uploader_match else "Torrentio"
 
     return {
-        "res": res,
-        "source": source,
-        "codec": codec,
-        "hdr": hdr_tag,
-        "audio": audio,
-        "peers": peers,
-        "size": size,
-        "uploader": uploader
+        "res": res, "source": "WEB-DL" if "web" in title_lower else "Bluray", 
+        "codec": codec, "hdr": hdr_tag, "audio": audio, 
+        "peers": peers, "size": size, "uploader": uploader
     }
 
 def get_hash_from_stream(stream: dict) -> str:
@@ -92,25 +75,53 @@ def get_hash_from_stream(stream: dict) -> str:
     if match: return match.group(1).lower()
     return ""
 
-async def check_cache_active(stream: dict, api_key: str) -> bool:
+# --- RD ACTIVE RESOLVER ---
+# Questa funzione controlla la cache E restituisce il link diretto se pronto
+async def resolve_rd_link(stream: dict, api_key: str):
     hash_val = get_hash_from_stream(stream)
-    if not hash_val: return False
-    is_cached = False
-    torrent_id = None
+    if not hash_val: return None
+
     try:
-        async with httpx.AsyncClient(timeout=8, headers={'Authorization': f"Bearer {api_key}"}) as client:
-            magnet_response = await rd.add_magnet(client, hash_val)
-            if 'id' not in magnet_response: return False
-            torrent_id = magnet_response['id']
+        async with httpx.AsyncClient(timeout=10, headers={'Authorization': f"Bearer {api_key}"}) as client:
+            # 1. Aggiungi Magnet
+            magnet_resp = await rd.add_magnet(client, hash_val)
+            if 'id' not in magnet_resp: return None
+            torrent_id = magnet_resp['id']
+            
+            # 2. Seleziona file
             await rd.select_files(client, torrent_id, "all")
+            
+            # 3. Controlla info
             info = await rd.get_torrent_info(client, torrent_id)
-            if info.get('status') == 'downloaded': is_cached = True
+            
+            # Se è scaricato, sblocchiamo il link (UNRESTRICT)
+            if info.get('status') == 'downloaded':
+                # Prendiamo il link dell'ultimo file video (solitamente il film)
+                files = [f for f in info.get('files', []) if f['selected'] == 1]
+                # Ordina per dimensione decrescente (il file più grande è il film)
+                files.sort(key=lambda x: x['bytes'], reverse=True)
+                
+                if files:
+                    selected_file_id = files[0]['id']
+                    # Trova il link originale corrispondente
+                    links = info.get('links', [])
+                    if links:
+                        link_to_unrestrict = links[0] # Semplificazione: prende il primo link generato
+                        
+                        # Chiamata Unrestrict
+                        unrestrict_resp = await client.post("https://api.real-debrid.com/rest/1.0/unrestrict/link", 
+                                                          data={"link": link_to_unrestrict})
+                        if unrestrict_resp.status_code == 200:
+                            stream_url = unrestrict_resp.json().get('download')
+                            return stream_url
+
+            # Pulizia
             await rd.delete_torrent(client, torrent_id)
-    except:
-        if torrent_id:
-            try: await rd.delete_torrent(client, torrent_id)
-            except: pass
-    return is_cached
+            
+    except Exception as e:
+        print(f"RD Resolve Error: {e}")
+        
+    return None
 
 # --- ENDPOINTS ---
 
@@ -123,9 +134,9 @@ async def configure(request: Request):
 async def get_manifest(config: str):
     return {
         "id": "org.ita.torrenthan",
-        "version": "3.5.0",
+        "version": "4.0.0",
         "name": "Torrenthan 🇮🇹",
-        "description": "Torrentio ITA Enhanced. Stile Leviathan.",
+        "description": "Torrentio ITA Enhanced. RD Unrestricted & TorBox.",
         "resources": ["stream"],
         "types": ["movie", "series"],
         "catalogs": [],
@@ -139,7 +150,6 @@ async def get_stream(config: str, type: str, id: str):
     apikey = settings.get("key")
     options = settings.get("options", "")
 
-    # Inoltro chiave TorBox a Torrentio
     if service == 'torbox' and apikey:
         torbox_param = f"torbox={apikey}"
         options = f"{options}|{torbox_param}" if options else torbox_param
@@ -156,68 +166,54 @@ async def get_stream(config: str, type: str, id: str):
     for stream in ita_streams[:15]:
         original_name = stream.get('name', '')
         original_title = stream.get('title', '')
-        
-        # Estrai Dati Stile Leviathan
         data = extract_leviathan_data(original_title, original_name)
         
-        # Determina Stato e Icona Provider
         provider_code = "P2P"
         provider_icon = "👤"
-        left_color_icon = "🔵" 
+        left_color_icon = "🔵"
         
-        is_ready = False
-
-        # Logica Cache
+        # LOGICA REAL-DEBRID (Nuova: Unrestrict)
         if service == 'realdebrid' and apikey:
-            if await check_cache_active(stream, apikey):
+            # Tentiamo di ottenere il link diretto
+            direct_link = await resolve_rd_link(stream, apikey)
+            
+            if direct_link:
                 provider_code = "RD"
                 provider_icon = "🐙"
-                left_color_icon = "🐬" # Icona blu leviathan
-                is_ready = True
+                left_color_icon = "🐬"
+                # SOSTITUIAMO L'URL: Ora è HTTP diretto, non più Magnet!
+                stream['url'] = direct_link
+                # Rimuoviamo infoHash per forzare Stremio a usare l'URL
+                if 'infoHash' in stream: del stream['infoHash']
             else:
                 provider_code = "DL"
                 provider_icon = "⏳"
-        
+
+        # LOGICA TORBOX
         elif service == 'torbox':
             url = stream.get('url', '')
-            if "TB+" in original_name or "TorBox+" in original_name or url.startswith('https'):
+            if "TB+" in original_name or url.startswith('https'):
                 provider_code = "TB"
-                provider_icon = "🌩️" # Icona fulmine
+                provider_icon = "🌩️"
                 left_color_icon = "⚡"
-                is_ready = True
             else:
                 provider_code = "DL"
                 provider_icon = "⏳"
 
-        # --- FORMATTAZIONE OUTPUT STILE LEVIATHAN ---
-        
-        # Nome Provider (Colonna Sinistra)
-        # Esempio: "RD 🐙\nTorrenthan"
+        # Formattazione Leviathan
         stream['name'] = f"{left_color_icon} {provider_code} {provider_icon}\nTorrenthan"
         
-        # Titolo Descrittivo (Multiriga)
         clean_filename = original_title.split('\n')[0].replace('.', ' ').strip()
-        
-        # Linea 1: Titolo pulito
-        line1 = f"▶ {clean_filename}"
-        
-        # Linea 2: Qualità tecnica (Icona forcone/tridente 🔱 per risoluzione)
-        line2 = f"🔱 {data['res']} • {data['source']} • {data['codec']}{data['hdr']}"
-        
-        # Linea 3: Lingua e Audio
-        line3 = f"🗣️ IT/GB | 💿 {data['audio']}"
-        
-        # Linea 4: Dimensione e Seeders
-        line4 = f"💾 {data['size']} | 👥 {data['peers']}"
-        
-        # Linea 5: Uploader
-        line5 = f"🦈 {data['uploader']}"
-
-        stream['title'] = f"{line1}\n{line2}\n{line3}\n{line4}\n{line5}"
+        stream['title'] = (
+            f"▶ {clean_filename}\n"
+            f"🔱 {data['res']} • {data['source']} • {data['codec']}{data['hdr']}\n"
+            f"🗣️ IT/GB | 💿 {data['audio']}\n"
+            f"💾 {data['size']} | 👥 {data['peers']}\n"
+            f"🦈 {data['uploader']}"
+        )
         
         final_streams.append(stream)
 
-    # Ordina: Cached prima
     final_streams.sort(key=lambda x: "🐙" not in x["name"] and "🌩️" not in x["name"])
 
     return {"streams": final_streams}
