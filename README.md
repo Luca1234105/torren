@@ -165,5 +165,5 @@ Questo progetto è stato sviluppato a **puro scopo didattico** e di ricerca per:
 
 <div align="center">
   <sub>Developed with logic & passion.</sub><br>
-  <sub><i>Torrenthan Team © 2024</i></sub>
+  <sub><i>LUC4N3X © 2025</i></sub>
 </div>
